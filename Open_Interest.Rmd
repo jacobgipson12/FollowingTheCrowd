@@ -1,0 +1,1006 @@
+---
+title: "Open_Interest"
+author: "Jacob Gipson"
+date: '2022-10-26'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Load Packages and Data
+```{r}
+library(tswge)
+library(tseries)
+library(nnfor)
+oi = read.csv("/Users/jacobgipson/Documents/SMU/Capstone/OpenInterestData.csv",header = T)
+oi.train = oi[1:384,]
+oi.test = oi[385:434,]
+```
+
+#### Initial SPY plot
+```{r}
+spy.train = oi.train$SPX.Open.Interest
+plotts.sample.wge(spy.train, lag.max = 100)
+adf.test(spy.train)
+par(mfrow = c(1,1))
+plotts.wge(spy.train)
+acf(spy.train, lag.max = 100)
+parzen.wge(spy.train)
+```
+##### Initial Thoughts
+###### Series does not seem stationary, but has constant variance for  the most part
+###### ACF plot shows weird pattern
+###### Parzen window shows a peak at 0. 
+
+```{r}
+spy.d1 = artrans.wge(spy.train, phi.tr = 1)
+plotts.sample.wge(spy.d1, arlimits = T)
+#aic5.wge(spy.d1, p = 0:10, q = 0:10)
+#aic5.wge(spy.d1, p = 0:10, q = 0:10, type = "bic")
+```
+#### Differencing seems to take out much of the sample correlations
+#### We also get a stationary time sereis, there is concern regarding variance but it only seems that way at one point
+#### Upon review, that point happens somewhere in June/July 2022, so I'm not sure how to explain that
+#### AIC/BIC favors (1,1), (4,1), and (3,2) after differencing
+#### Next we will estimate the parameters and check MSE to see which performs best
+```{r}
+spy11 = est.arma.wge(spy.d1, p = 1, q = 1)
+spy41 = est.arma.wge(spy.d1, p = 4, q = 1)
+spy32 = est.arma.wge(spy.d1, p = 3, q = 2)
+```
+```{r}
+spy.test = oi.test$SPX.Open.Interest
+
+spy11f = fore.arima.wge(spy.train, phi = spy11$phi, theta = spy11$theta, d = 1, n.ahead = 50)
+spy41f = fore.arima.wge(spy.train, phi = spy41$phi, theta = spy41$theta, d = 1, n.ahead = 50)
+spy32f = fore.arima.wge(spy.train, phi = spy32$phi, theta = spy32$theta, d = 1, n.ahead = 50)
+
+
+spy11ASE_5 = mean((spy11f$f[1:5]-spy.test[1:5])^2)
+spy41ASE_5 = mean((spy41f$f[1:5]-spy.test[1:5])^2)
+spy32ASE_5 = mean((spy32f$f[1:5]-spy.test[1:5])^2)
+
+spy11ASE_10 = mean((spy11f$f[1:10]-spy.test[1:10])^2)
+spy41ASE_10 = mean((spy41f$f[1:10]-spy.test[1:10])^2)
+spy32ASE_10 = mean((spy32f$f[1:10]-spy.test[1:10])^2)
+
+spy11ASE = mean((spy11f$f-spy.test)^2)
+spy41ASE = mean((spy41f$f-spy.test)^2)
+spy32ASE = mean((spy32f$f-spy.test)^2)
+
+spy11ASE_5
+spy41ASE_5
+spy32ASE_5
+
+spy11ASE_10
+spy41ASE_10
+spy32ASE_10
+
+spy11ASE
+spy41ASE
+spy32ASE
+```
+#### By ASE ARIMA(3,1,2) looks the best but I am not convinced.
+```{r}
+plotts.sample.wge(spy32$res, arlimits = T)
+ljungbox32 = ljung.wge(spy32$res, p = 3, q = 2)
+ljungbox32.48 = ljung.wge(spy32$res, p = 3, q = 2, K = 48)
+
+plotts.sample.wge(spy11$res, arlimits = T)
+ljungbox11 = ljung.wge(spy11$res, p = 1, q = 1)
+ljungbox11.48 = ljung.wge(spy11$res, p = 1, q = 1, K = 48)
+
+plotts.sample.wge(spy41$res, arlimits = T)
+ljungbox41 = ljung.wge(spy41$res, p = 1, q = 1)
+ljungbox41.48 = ljung.wge(spy41$res, p = 1, q = 1, K = 48)
+```
+```{r}
+ljungbox32$pval
+ljungbox32.48$pval
+ljungbox11$pval
+ljungbox11.48$pval
+ljungbox41$pval
+ljungbox41.48$pval
+```
+#### Fails to reject- so does not show  a lack of fit
+
+#### Lets assume a stationary model
+```{r}
+plotts.sample.wge(spy.train, arlimits = T)
+#aic5.wge(spy.train, p = 0:10, q = 0:10)
+#aic5.wge(spy.train, p = 0:10, q = 0:10, type = "bic")
+par(mfrow = c(1,1))
+plotts.wge(spy.train)
+```
+#### We will look at (2,0), (1,1), (1,2)
+```{r}
+spy1.1 = est.arma.wge(spy.train, p = 1, q = 1)
+spy1.2 = est.arma.wge(spy.train, p = 1, q = 2)
+spy2.0 = est.ar.wge(spy.train, p = 2, method = "burg")
+```
+```{r}
+spy1.1f = fore.arma.wge(spy.train, phi = spy1.1$phi, theta = spy1.1$theta, n.ahead = 50)
+spy1.2f = fore.arma.wge(spy.train, phi = spy1.2$phi, theta = spy1.2$theta, n.ahead = 50)
+spy2.0f = fore.arma.wge(spy.train, phi = spy2.0$phi, theta = 0, n.ahead = 50)
+
+spy1.1ASE_5 = mean((spy1.1f$f[1:5]-spy.test[1:5])^2)
+spy1.2ASE_5 = mean((spy1.2f$f[1:5]-spy.test[1:5])^2)
+spy2.0ASE_5 = mean((spy2.0f$f[1:5]-spy.test[1:5])^2)
+
+spy1.1ASE_10 = mean((spy1.1f$f[1:10]-spy.test[1:10])^2)
+spy1.2ASE_10 = mean((spy1.2f$f[1:10]-spy.test[1:10])^2)
+spy2.0ASE_10 = mean((spy2.0f$f[1:10]-spy.test[1:10])^2)
+
+spy1.1ASE = mean((spy1.1f$f-spy.test)^2)
+spy1.2ASE = mean((spy1.2f$f-spy.test)^2)
+spy2.0ASE = mean((spy2.0f$f-spy.test)^2)
+
+spy1.1ASE_5
+spy1.2ASE_5
+spy2.0ASE_5
+
+spy1.1ASE_10
+spy1.2ASE_10
+spy2.0ASE_10
+
+spy1.1ASE
+spy1.2ASE
+spy2.0ASE
+```
+```{r}
+plot(spy.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX ARMA(1,1) 5-Day Forecast")
+lines(seq(1,5),spy1.1f$f[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+
+plot(spy.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX ARMA(1,1) 10-Day Forecast")
+lines(seq(1,10),spy1.1f$f[1:10],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+
+plot(spy.test, type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX ARMA(1,1) 50-Day Forecast")
+lines(seq(1,50),spy1.1f$f,type = "l", lty = 2)
+legend(2, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+```
+#### So the best model we see by ASE is still the ARIMA(3,1,2) which is good because we know from background knowledge that open interest should not be stationary
+
+#Now we look at Rolling window ASE for both long and short term time horizons
+```{r include=FALSE}
+spy = oi$SPX.Open.Interest
+
+vsRMSE41 = roll.win.rmse.wge(spy,horizon = 5, d = 1, phi = spy41$phi, theta = spy41$theta)
+vsRMSE32 = roll.win.rmse.wge(spy,horizon = 5, d = 1, phi = spy32$phi, theta = spy32$theta)
+vsRMSE11 = roll.win.rmse.wge(spy,horizon = 5, d = 1, phi = spy11$phi, theta = spy11$theta)
+
+vsRMSE1.2 = roll.win.rmse.wge(spy,horizon = 5, phi = spy1.2$phi, theta = spy1.2$theta)
+vsRMSE1.1 = roll.win.rmse.wge(spy,horizon = 5, phi = spy1.1$phi, theta = spy1.1$theta)
+vsRMSE2.0 = roll.win.rmse.wge(spy,horizon = 5, phi = spy2.0$phi, theta = 0)
+
+sRMSE41 = roll.win.rmse.wge(spy,horizon = 10, d = 1, phi = spy41$phi, theta = spy41$theta)
+sRMSE32 = roll.win.rmse.wge(spy,horizon = 10, d = 1, phi = spy32$phi, theta = spy32$theta)
+sRMSE11 = roll.win.rmse.wge(spy,horizon = 10, d = 1, phi = spy11$phi, theta = spy11$theta)
+
+sRMSE1.2 = roll.win.rmse.wge(spy,horizon = 10, phi = spy1.2$phi, theta = spy1.2$theta)
+sRMSE1.1 = roll.win.rmse.wge(spy,horizon = 10, phi = spy1.1$phi, theta = spy1.1$theta)
+sRMSE2.0 = roll.win.rmse.wge(spy,horizon = 10, phi = spy2.0$phi, theta = 0)
+
+
+lRMSE41 = roll.win.rmse.wge(spy,horizon = 50, d = 1, phi = spy41$phi, theta = spy41$theta)
+lRMSE32 = roll.win.rmse.wge(spy,horizon = 50, d = 1, phi = spy32$phi, theta = spy32$theta)
+lRMSE11 = roll.win.rmse.wge(spy,horizon = 50, d = 1, phi = spy11$phi, theta = spy11$theta)
+
+lRMSE1.2 = roll.win.rmse.wge(spy,horizon = 50, phi = spy1.2$phi, theta = spy1.2$theta)
+lRMSE1.1 = roll.win.rmse.wge(spy,horizon = 50, phi = spy1.1$phi, theta = spy1.1$theta)
+lRMSE2.0 = roll.win.rmse.wge(spy,horizon = 50, phi = spy2.0$phi, theta = 0)
+```
+```{r}
+vsRMSE11$rwRMSE
+vsRMSE41$rwRMSE
+vsRMSE32$rwRMSE
+
+vsRMSE1.1$rwRMSE
+vsRMSE1.2$rwRMSE
+vsRMSE2.0$rwRMSE
+
+sRMSE11$rwRMSE
+sRMSE41$rwRMSE
+sRMSE32$rwRMSE
+
+sRMSE1.1$rwRMSE
+sRMSE1.2$rwRMSE
+sRMSE2.0$rwRMSE
+
+lRMSE11$rwRMSE
+lRMSE41$rwRMSE
+lRMSE32$rwRMSE
+
+lRMSE1.1$rwRMSE
+lRMSE1.2$rwRMSE
+lRMSE2.0$rwRMSE
+```
+```{r}
+lRMSE32$rwRMSE
+lRMSE11$rwRMSE
+lRMSE1.2$rwRMSE
+```
+### Check ljung box for stationary models
+
+```{r}
+plotts.sample.wge(spy1.1$res, arlimits = T)
+ljungbox1.1 = ljung.wge(spy1.1$res, p = 1, q = 1)
+ljungbox1.1.48 = ljung.wge(spy1.1$res, p = 1, q = 1, K = 48)
+
+plotts.sample.wge(spy1.2$res, arlimits = T)
+ljungbox1.2 = ljung.wge(spy1.2$res, p = 1, q = 2)
+ljungbox1.2.48 = ljung.wge(spy1.2$res, p = 1, q = 2, K = 48)
+
+plotts.sample.wge(spy2.0$res, arlimits = T)
+ljungbox2.0 = ljung.wge(spy2.0$res, p = 2)
+ljungbox2.0.48 = ljung.wge(spy2.0$res, p = 2, K = 48)
+```
+```{r}
+ljungbox1.1$pval
+ljungbox1.1.48$pval
+ljungbox1.2$pval
+ljungbox1.2.48$pval
+ljungbox2.0$pval
+ljungbox2.0.48$pval
+```
+
+### Seems like Stationary ARMA(1,2) model performs the best when looking at rolling window RMSE, also, it is not far off when looking at traditional ASE
+
+#### Now Apple
+```{r}
+aapl.train = oi.train$AAPL.Open.Interest
+plotts.sample.wge(aapl.train)
+adf.test(aapl.train)
+par(mfrow = c(1,1))
+plotts.wge(aapl.train)
+acf(aapl.train, lag.max = 25)
+parzen.wge(aapl.train)
+```
+### Intitioal Thoughts
+#### Seems stationary and has constant variance
+#### Seems like it has damping ACF, could be a little damped sinusoidal
+#### Frequency plot has peak at 0 and has small peak at 0.2
+#### Lets check non-stationary models
+```{r}
+aapl.d1 = artrans.wge(aapl.train, phi.tr = 1)
+plotts.sample.wge(aapl.d1, arlimits = T)
+#aic5.wge(aapl.d1, p = 0:10, q = 0:10)
+#aic5.wge(aapl.d1, p = 0:10, q = 0:10, type = "bic")
+```
+#### I suspect some seasonality
+```{r}
+factor.wge(phi = c(rep(0,4),1))
+est.ar.wge(aapl.d1, p = 7, method = 'mle')
+```
+### Overfitting does not let us conclude that there is any seasonality for s = 5. We move on to fitting models
+
+###We will also fit some stationary models
+```{r}
+aic5.wge(aapl.train, p = 0:10, q = 0:10)
+aic5.wge(aapl.train, p = 0:10, q = 0:10, type = "bic")
+```
+
+#### Differencing seems to take out much of the sample correlations
+#### For non-stationary models, after checking AIC and BIC, the 4 models that I will fit are ARIMA(5,1,6), ARIMA(9,1,5), ARIMA(1,1,1) and ARIMA(0,1,3)
+#### For Stationary models, the models i will check are ARMA(6,8), ARMA(4,7), AR(5), AR(4)
+```{r}
+aapl516 = est.arma.wge(aapl.d1, p = 5, q = 6)
+aapl915 = est.arma.wge(aapl.d1, p = 9, q = 5)
+aapl111 = est.arma.wge(aapl.d1, p = 1, q = 1)
+aapl013 = est.arma.wge(aapl.d1, p = 0, q = 3)
+aapl68 = est.arma.wge(aapl.train, p = 6, q = 8)
+aapl47 = est.arma.wge(aapl.train, p = 4, q = 7 )
+aapl50 = est.ar.wge(aapl.train, p = 5, method = 'burg')
+aapl40 = est.ar.wge(aapl.train, p = 4, method = 'burg')
+```
+```{r}
+aapl.test = oi.test$AAPL.Open.Interest
+
+aapl516f = fore.arima.wge(aapl.train, phi = aapl516$phi, theta = aapl516$theta, d = 1, n.ahead = 50)
+aapl915f = fore.arima.wge(aapl.train, phi = aapl915$phi, theta = aapl915$theta, d = 1, n.ahead = 50)
+aapl111f = fore.arima.wge(aapl.train, phi = aapl111$phi, theta = aapl111$theta, d = 1, n.ahead = 50)
+aapl013f = fore.arima.wge(aapl.train, phi = 0, theta = aapl013$theta, d = 1, n.ahead = 50)
+aapl68f = fore.arma.wge(aapl.train, phi = aapl68$phi, theta = aapl68$theta, n.ahead = 50)
+aapl47f = fore.arma.wge(aapl.train, phi = aapl47$phi, theta = aapl47$theta, n.ahead = 50)
+aapl50f = fore.arma.wge(aapl.train, phi = aapl50$phi, theta = 0, n.ahead = 50)
+aapl40f = fore.arma.wge(aapl.train, phi = aapl40$phi, theta = 0, n.ahead = 50)
+
+aapl516ASE_5 = mean((aapl516f$f[1:5]-aapl.test[1:5])^2)
+aapl915ASE_5 = mean((aapl915f$f[1:5]-aapl.test[1:5])^2)
+aapl111ASE_5 = mean((aapl111f$f[1:5]-aapl.test[1:5])^2)
+aapl013ASE_5 = mean((aapl013f$f[1:5]-aapl.test[1:5])^2)
+aapl68ASE_5 = mean((aapl68f$f[1:5]-aapl.test[1:5])^2)
+aapl47ASE_5 = mean((aapl47f$f[1:5]-aapl.test[1:5])^2)
+aapl50ASE_5 = mean((aapl50f$f[1:5]-aapl.test[1:5])^2)
+aapl40ASE_5 = mean((aapl40f$f[1:5]-aapl.test[1:5])^2)
+
+aapl516ASE_10 = mean((aapl516f$f[1:10]-aapl.test[1:10])^2)
+aapl915ASE_10 = mean((aapl915f$f[1:10]-aapl.test[1:10])^2)
+aapl111ASE_10 = mean((aapl111f$f[1:10]-aapl.test[1:10])^2)
+aapl013ASE_10 = mean((aapl013f$f[1:10]-aapl.test[1:10])^2)
+aapl68ASE_10 = mean((aapl68f$f[1:10]-aapl.test[1:10])^2)
+aapl47ASE_10 = mean((aapl47f$f[1:10]-aapl.test[1:10])^2)
+aapl50ASE_10 = mean((aapl50f$f[1:10]-aapl.test[1:10])^2)
+aapl40ASE_10 = mean((aapl40f$f[1:10]-aapl.test[1:10])^2)
+
+aapl516ASE = mean((aapl516f$f-aapl.test)^2)
+aapl915ASE = mean((aapl915f$f-aapl.test)^2)
+aapl111ASE = mean((aapl111f$f-aapl.test)^2)
+aapl013ASE = mean((aapl013f$f-aapl.test)^2)
+aapl68ASE = mean((aapl68f$f-aapl.test)^2)
+aapl47ASE = mean((aapl47f$f-aapl.test)^2)
+aapl50ASE = mean((aapl50f$f-aapl.test)^2)
+aapl40ASE = mean((aapl40f$f-aapl.test)^2)
+```
+```{r}
+plot(aapl.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL ARMA(4, 7) 5-Day Forecast")
+lines(seq(1,5),aapl47f$f[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+
+plot(aapl.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL ARMA(4, 7) 10-Day Forecast")
+lines(seq(1,10),aapl47f$f[1:10],col = 'blue', lty = 2)
+legend(2, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+
+plot(aapl.test, type = "l",ylim = c(1000000, 6000000)  ,ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL ARMA(4, 7) 50-Day Forecast")
+lines(seq(1,50),aapl47f$f,col = 'blue', lty = 2)
+legend(2, 6000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+```
+
+```{r}
+aapl516ASE_5
+aapl915ASE_5
+aapl111ASE_5
+aapl013ASE_5
+aapl68ASE_5
+aapl47ASE_5
+aapl50ASE_5
+aapl40ASE_5
+```
+
+```{r}
+aapl516ASE_10
+aapl915ASE_10
+aapl111ASE_10
+aapl013ASE_10
+aapl68ASE_10
+aapl47ASE_10
+aapl50ASE_10
+aapl40ASE_10
+```
+```{r}
+aapl516ASE
+aapl915ASE
+aapl111ASE
+aapl013ASE
+aapl68ASE
+aapl47ASE
+aapl50ASE
+aapl40ASE
+```
+#Top 5 performing models by ASE were the ARIMA(9,1,5), ARMA(6,8), ARMA(4,7), AR(5), AR(4)
+
+#Now we look at Rolling window ASE for both long and short term time horizons at the top 5 performing models
+```{r include=FALSE}
+aapl = oi$AAPL.Open.Interest
+
+vsRMSE516 = roll.win.rmse.wge(aapl,horizon = 5, d = 1, phi = aapl516$phi, theta = aapl516$theta)
+vsRMSE915 = roll.win.rmse.wge(aapl,horizon = 5, d = 1, phi = aapl915$phi, theta = aapl915$theta)
+vsRMSE111 = roll.win.rmse.wge(aapl,horizon = 5, d = 1, phi = aapl111$phi, theta = aapl111$theta)
+vsRMSE68 = roll.win.rmse.wge(aapl,horizon = 5, phi = aapl68$phi, theta = aapl68$theta)
+vsRMSE47 = roll.win.rmse.wge(aapl,horizon = 5, phi = aapl47$phi, theta = aapl47$theta)
+vsRMSE50 = roll.win.rmse.wge(aapl,horizon = 5, phi = aapl50$phi)
+
+sRMSE516 = roll.win.rmse.wge(aapl,horizon = 10, d = 1, phi = aapl516$phi, theta = aapl516$theta)
+sRMSE915 = roll.win.rmse.wge(aapl,horizon = 10, d = 1, phi = aapl915$phi, theta = aapl915$theta)
+sRMSE111 = roll.win.rmse.wge(aapl,horizon = 10, d = 1, phi = aapl111$phi, theta = aapl111$theta)
+sRMSE68 = roll.win.rmse.wge(aapl,horizon = 10, phi = aapl68$phi, theta = aapl68$theta)
+sRMSE47 = roll.win.rmse.wge(aapl,horizon = 10, phi = aapl47$phi, theta = aapl47$theta)
+sRMSE50 = roll.win.rmse.wge(aapl,horizon = 10, phi = aapl50$phi)
+
+lRMSE516 = roll.win.rmse.wge(aapl,horizon = 50, d = 1, phi = aapl516$phi, theta = aapl516$theta)
+lRMSE915 = roll.win.rmse.wge(aapl,horizon = 50, d = 1, phi = aapl915$phi, theta = aapl915$theta)
+lRMSE111 = roll.win.rmse.wge(aapl,horizon = 50, d = 1, phi = aapl111$phi, theta = aapl111$theta)
+lRMSE68 = roll.win.rmse.wge(aapl,horizon = 50, phi = aapl68$phi, theta = aapl68$theta)
+lRMSE47 = roll.win.rmse.wge(aapl,horizon = 50, phi = aapl47$phi, theta = aapl47$theta)
+lRMSE50 = roll.win.rmse.wge(aapl,horizon = 50, phi = aapl50$phi)
+
+```
+
+```{r}
+vsRMSE516$rwRMSE
+vsRMSE915$rwRMSE
+vsRMSE111$rwRMSE
+vsRMSE68$rwRMSE
+vsRMSE47$rwRMSE
+vsRMSE50$rwRMSE
+
+```
+
+```{r}
+sRMSE516$rwRMSE
+sRMSE915$rwRMSE
+sRMSE111$rwRMSE
+sRMSE68$rwRMSE
+sRMSE47$rwRMSE
+sRMSE50$rwRMSE
+
+```
+```{r}
+lRMSE516$rwRMSE
+lRMSE915$rwRMSE
+lRMSE111$rwRMSE
+lRMSE68$rwRMSE
+lRMSE47$rwRMSE
+lRMSE50$rwRMSE
+
+```
+#AR(5) has the best score using rolling windown RMSE in all 3 windows
+#AR(4,7) has among the top scores for all 6 measures except for 10 day ASE
+```{r}
+ljungbox516 = ljung.wge(aapl516$res, p = 5, q = 6)
+ljungbox516.48 = ljung.wge(aapl516$res, p = 5, q = 6, K = 48)
+
+ljungbox915 = ljung.wge(aapl915$res, p = 9, q = 5)
+ljungbox915.48 = ljung.wge(aapl915$res, p = 9, q = 5, K = 48)
+
+ljungbox111 = ljung.wge(aapl111$res, p = 1, q = 1)
+ljungbox111.48 = ljung.wge(aapl111$res, p = 1, q = 1, K = 48)
+
+ljungbox68 = ljung.wge(aapl68$res, p = 6, q = 8)
+ljungbox68.48 = ljung.wge(aapl68$res, p = 6, q = 8, K = 48)
+
+ljungbox47 = ljung.wge(aapl47$res, p = 4, q = 7)
+ljungbox47.48 = ljung.wge(aapl47$res, p = 4, q = 7, K = 48)
+
+ljungbox50 = ljung.wge(aapl50$res, p = 5)
+ljungbox50.48 = ljung.wge(aapl50$res, p = 5, K = 48)
+```
+```{r}
+ljungbox516$pval
+ljungbox516.48$pval
+
+ljungbox915$pval
+ljungbox915.48$pval
+
+ljungbox111$pval
+ljungbox111.48$pval
+
+ljungbox68$pval
+ljungbox68.48$pval
+
+ljungbox47$pval
+ljungbox47.48$pval
+
+ljungbox50$pval
+ljungbox50.48$pval
+```
+
+# AR(4,7) was the best
+
+##MLP - SPY
+```{r}
+ts.spy.train = ts(spy.train)
+ts.spy.test = ts(spy.test)
+```
+
+#Create 4 candidate NN models to evaluate
+```{r}
+spyfit1 = mlp(ts.spy.train)
+spyfit1
+plot(spyfit1)
+```
+```{r}
+spyfit2 = mlp(ts.spy.train, hd.auto.type = 'cv')
+spyfit2
+plot(spyfit2)
+```
+```{r}
+spyfit3 = mlp(ts.spy.train, lags = 1)
+spyfit3
+plot(spyfit3)
+```
+```{r}
+spyfit4 = mlp(ts.spy.train, difforder = 1)
+spyfit4
+plot(spyfit4)
+```
+
+```{r}
+f1 = forecast(spyfit1, h = 50)
+
+plot(ts.spy.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,5),f1$mean[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE5 = mean((ts.spy.test[1:5]-f1$mean[1:5])^2)
+
+plot(ts.spy.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f1$mean[1:10],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE10 = mean((ts.spy.test[1:10]-f1$mean[1:10])^2)
+
+plot(ts.spy.test, type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f1$mean,type = "l", lty = 2)
+legend(1, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE50 = mean((ts.spy.test-f1$mean[1:50])^2)
+
+```
+
+```{r}
+f2 = forecast(spyfit2, h = 50)
+
+plot(ts.spy.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,5),f2$mean[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE5 = mean((ts.spy.test[1:5]-f2$mean[1:5])^2)
+
+plot(ts.spy.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f2$mean[1:10],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE10 = mean((ts.spy.test[1:10]-f2$mean[1:10])^2)
+
+plot(ts.spy.test, type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f2$mean,type = "l", lty = 2)
+legend(1, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE50 = mean((ts.spy.test-f2$mean[1:50])^2)
+```
+
+```{r}
+f3 = forecast(spyfit3, h = 50)
+
+plot(ts.spy.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX MLP 5-Day Forecast")
+lines(seq(1,5),f3$mean[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE5 = mean((ts.spy.test[1:5]-f3$mean[1:5])^2)
+
+plot(ts.spy.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX MLP 10-Day Forecast")
+lines(seq(1,10),f3$mean[1:10],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE10 = mean((ts.spy.test[1:10]-f3$mean[1:10])^2)
+
+plot(ts.spy.test, type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$SPX MLP 50-Day Forecast")
+lines(seq(1,50),f3$mean, col = "blue", lty = 2)
+legend(1, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE50 = mean((ts.spy.test-f3$mean[1:50])^2)
+```
+
+```{r}
+f4 = forecast(spyfit4, h = 50)
+
+plot(ts.spy.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,5),f4$mean[1:5],col = 'blue', lty = 2)
+legend(6, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE5 = mean((ts.spy.test[1:5]-f4$mean[1:5])^2)
+
+plot(ts.spy.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f4$mean[1:10],col = 'blue', lty = 2)
+legend(2, 1500000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE10 = mean((ts.spy.test[1:10]-f4$mean[1:10])^2)
+
+plot(ts.spy.test, type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f4$mean,type = "l", lty = 2)
+legend(1, 1800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE50 = mean((ts.spy.test-f4$mean[1:50])^2)
+```
+```{r}
+f1.ASE5
+f2.ASE5
+f3.ASE5
+f4.ASE5
+
+f1.ASE10
+f2.ASE10
+f3.ASE10
+f4.ASE10
+
+f1.ASE50
+f2.ASE50
+f3.ASE50
+f4.ASE50
+```
+```{r}
+ts.spy = ts(oi$SPX.Open.Interest)
+
+vsRWRMSE1 = roll.win.rmse.nn.wge(ts.spy, horizon = 5, spyfit1)
+vsRWRMSE2 = roll.win.rmse.nn.wge(ts.spy, horizon = 5, spyfit2)
+vsRWRMSE3 = roll.win.rmse.nn.wge(ts.spy, horizon = 5, spyfit3)
+vsRWRMSE4 = roll.win.rmse.nn.wge(ts.spy, horizon = 5, spyfit4)
+
+sRWRMSE1 = roll.win.rmse.nn.wge(ts.spy, horizon = 10, spyfit1)
+sRWRMSE2 = roll.win.rmse.nn.wge(ts.spy, horizon = 10, spyfit2)
+sRWRMSE3 = roll.win.rmse.nn.wge(ts.spy, horizon = 10, spyfit3)
+sRWRMSE4 = roll.win.rmse.nn.wge(ts.spy, horizon = 10, spyfit4)
+
+lRWRMSE1 = roll.win.rmse.nn.wge(ts.spy, horizon = 50, spyfit1)
+lRWRMSE2 = roll.win.rmse.nn.wge(ts.spy, horizon = 50, spyfit2)
+lRWRMSE3 = roll.win.rmse.nn.wge(ts.spy, horizon = 50, spyfit3)
+lRWRMSE4 = roll.win.rmse.nn.wge(ts.spy, horizon = 50, spyfit4)
+```
+```{r}
+vsRWRMSE1$rwRMSE 
+vsRWRMSE2$rwRMSE 
+vsRWRMSE3$rwRMSE 
+vsRWRMSE4$rwRMSE 
+```
+
+```{r}
+sRWRMSE1$rwRMSE 
+sRWRMSE2$rwRMSE 
+sRWRMSE3$rwRMSE 
+sRWRMSE4$rwRMSE 
+```
+
+
+```{r}
+lRWRMSE1$rwRMSE 
+lRWRMSE2$rwRMSE 
+lRWRMSE3$rwRMSE 
+lRWRMSE4$rwRMSE 
+```
+## Seems like fit 2 and fit 3 have the best short and long term rolling window RMSE's of all of our spy models. 
+## fit 3 seems the best
+#Lets incorporate put/call ratio and see if we can improve our performance for our MLP models
+```{r}
+oi.train2 = oi[15:384,]
+oi.test2 = oi[385:434,]
+
+spy.oi.train = ts(as.numeric(oi.train2$SPX.Open.Interest))
+spy.oi.test = ts(as.numeric(oi.test2$SPX.Open.Interest))
+spy.pc = ts(as.numeric(oi$SPX.Put_Call_Ratio[15:434]))
+spy.pc.df = data.frame(spy_pc_ratio = spy.pc)
+plotts.sample.wge(spy.pc)
+```
+
+```{r}
+spyfit_pc1 = mlp(spy.oi.train, xreg = spy.pc.df)
+plot(spyfit_pc1)
+```
+
+```{r}
+spyfit_pc2 = mlp(spy.oi.train, xreg = spy.pc.df, hd.auto.type = 'cv')
+plot(spyfit_pc2)
+```
+```{r}
+spyfit_pc3 = mlp(spy.oi.train, xreg = spy.pc.df, lags = 1)
+plot(spyfit_pc2)
+```
+
+```{r}
+f5 = forecast(spyfit_pc1, h = 50, xreg = spy.pc.df)
+
+plot(spy.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f5$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE5 = mean((spy.oi.test[1:5]-f5$mean[1:5])^2)
+
+plot(spy.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f5$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE10 = mean((spy.oi.test[1:10]-f5$mean[1:10])^2)
+
+plot(spy.oi.test, type = "l", ylim = c(500000, 2000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f5$mean,type = "l", lty = 2)
+legend(2, 2000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE50 = mean((spy.oi.test-f5$mean[1:50])^2)
+```
+
+```{r}
+f6 = forecast(spyfit_pc2, h = 50, xreg = spy.pc.df)
+
+plot(spy.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f6$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE5 = mean((spy.oi.test[1:5]-f6$mean[1:5])^2)
+
+plot(spy.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f6$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE10 = mean((spy.oi.test[1:10]-f6$mean[1:10])^2)
+
+plot(spy.oi.test, type = "l", ylim = c(500000, 2000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f6$mean,type = "l", lty = 2)
+legend(2, 2000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE50 = mean((spy.oi.test-f6$mean[1:50])^2)
+```
+
+```{r}
+f7 = forecast(spyfit_pc3, h = 50, xreg = spy.pc.df)
+
+plot(spy.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f7$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE5 = mean((spy.oi.test[1:5]-f7$mean[1:5])^2)
+
+plot(spy.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f7$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1400000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE10 = mean((spy.oi.test[1:10]-f7$mean[1:10])^2)
+
+plot(spy.oi.test, type = "l", ylim = c(500000, 2000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f7$mean,type = "l", lty = 2)
+legend(2, 2000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE50 = mean((spy.oi.test-f7$mean[1:50])^2)
+```
+
+```{r}
+f5.ASE5
+f6.ASE5
+f7.ASE5
+
+f5.ASE10
+f6.ASE10
+f7.ASE10
+
+f5.ASE50
+f6.ASE50
+f7.ASE50
+```
+## fit 7 is the best multivariate MLP model
+
+
+##MLP - AAPL
+```{r}
+ts.aapl.train = ts(aapl.train)
+ts.aapl.test = ts(aapl.test)
+```
+#Create 4 candidate NN models to evaluate
+```{r}
+aaplfit1 = mlp(ts.aapl.train)
+aaplfit1
+plot(aaplfit1)
+```
+```{r}
+aaplfit2 = mlp(ts.aapl.train, hd.auto.type = 'cv')
+aaplfit2
+plot(aaplfit2)
+```
+```{r}
+aaplfit3 = mlp(ts.aapl.train, lags = 1)
+aaplfit3
+plot(aaplfit3)
+```
+```{r}
+aaplfit4 = mlp(ts.aapl.train, difforder = 1)
+aaplfit4
+plot(aaplfit4)
+```
+
+```{r}
+f1 = forecast(aaplfit1, h = 50)
+
+plot(ts.aapl.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL MLP 5-Day Forecast")
+lines(seq(1,5),f1$mean[1:5],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE5 = mean((ts.aapl.test[1:5]-f1$mean[1:5])^2)
+
+plot(ts.aapl.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL MLP 10-Day Forecast")
+lines(seq(1,10),f1$mean[1:10],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE10 = mean((ts.aapl.test[1:10]-f1$mean[1:10])^2)
+
+plot(ts.aapl.test, type = "l", ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "$AAPL MLP 50-Day Forecast")
+lines(seq(1,50),f1$mean, col = 'blue', lty = 2)
+legend(1, 5800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f1.ASE50 = mean((ts.aapl.test-f1$mean[1:50])^2)
+```
+
+```{r}
+f2 = forecast(aaplfit2, h = 50)
+
+plot(ts.aapl.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f2$mean[1:5],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE5 = mean((ts.aapl.test[1:5]-f2$mean[1:5])^2)
+
+plot(ts.aapl.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f2$mean[1:10],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE10 = mean((ts.aapl.test[1:10]-f2$mean[1:10])^2)
+
+plot(ts.aapl.test, type = "l", ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f2$mean,type = "l", lty = 2)
+legend(1, 5800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f2.ASE50 = mean((ts.aapl.test-f2$mean[1:50])^2)
+```
+
+```{r}
+f3 = forecast(aaplfit3, h = 50)
+
+plot(ts.aapl.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f3$mean[1:5],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE5 = mean((ts.aapl.test[1:5]-f3$mean[1:5])^2)
+
+plot(ts.aapl.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f3$mean[1:10],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE10 = mean((ts.aapl.test[1:10]-f3$mean[1:10])^2)
+
+plot(ts.aapl.test, type = "l", ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f3$mean,type = "l", lty = 2)
+legend(1, 5800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f3.ASE50 = mean((ts.aapl.test-f3$mean[1:50])^2)
+```
+
+```{r}
+f4 = forecast(aaplfit4, h = 50)
+
+plot(ts.aapl.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f4$mean[1:5],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE5 = mean((ts.aapl.test[1:5]-f4$mean[1:5])^2)
+
+plot(ts.aapl.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f4$mean[1:10],col = 'blue', lty = 2)
+legend(1, 1700000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE10 = mean((ts.aapl.test[1:10]-f4$mean[1:10])^2)
+
+plot(ts.aapl.test, type = "l", ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f4$mean,type = "l", lty = 2)
+legend(1, 5800000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f4.ASE50 = mean((ts.aapl.test-f4$mean[1:50])^2)
+```
+```{r}
+f1.ASE5
+f2.ASE5
+f3.ASE5
+f4.ASE5
+```
+```{r}
+f1.ASE10
+f2.ASE10
+f3.ASE10
+f4.ASE10
+```
+```{r}
+f1.ASE50
+f2.ASE50
+f3.ASE50
+f4.ASE50
+```
+
+#Based on ASE, none of the NN models outperform the other models for AAPL open interest data
+
+#Lets incorporate put/call ratio and see if we can improve our performance for our MLP models
+```{r}
+oi.train3 = oi[16:384,]
+
+aapl.oi.train = ts(as.numeric(oi.train3$AAPL.Open.Interest))
+aapl.oi.test = ts(as.numeric(oi.test2$AAPL.Open.Interest))
+aapl.pc =  ts(as.numeric(oi$AAPL.Put_Call_Ratio[16:434]))
+aapl.pc.df = data.frame(aapl_pc_ratio = aapl.pc)
+plotts.sample.wge(aapl.pc)
+```
+```{r}
+aaplfit_pc1 = mlp(aapl.oi.train, xreg = aapl.pc.df)
+aaplfit_pc1
+plot(aaplfit_pc1)
+```
+
+```{r}
+aaplfit_pc2 = mlp(aapl.oi.train, xreg = aapl.pc.df, hd.auto.type = 'cv')
+aaplfit_pc2
+plot(aaplfit_pc2)
+```
+```{r}
+aaplfit_pc3 = mlp(aapl.oi.train, xreg = aapl.pc.df, lags = 1)
+aaplfit_pc3
+plot(aaplfit_pc3)
+```
+
+```{r}
+f5 = forecast(aaplfit_pc1, h = 50, xreg = aapl.pc.df)
+
+plot(aapl.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f5$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE5 = mean((aapl.oi.test[1:5]-f5$mean[1:5])^2)
+
+plot(aapl.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f5$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE10 = mean((aapl.oi.test[1:10]-f5$mean[1:10])^2)
+
+plot(aapl.oi.test, type = "l",ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f5$mean,type = "l", lty = 2)
+legend(2, 6000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f5.ASE50 = mean((aapl.oi.test-f5$mean[1:50])^2)
+```
+```{r}
+f6 = forecast(aaplfit_pc2, h = 50, xreg = aapl.pc.df)
+
+plot(aapl.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f6$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE5 = mean((aapl.oi.test[1:5]-f6$mean[1:5])^2)
+
+plot(aapl.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f6$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE10 = mean((aapl.oi.test[1:10]-f6$mean[1:10])^2)
+
+plot(aapl.oi.test, type = "l",ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f6$mean,type = "l", lty = 2)
+legend(2, 6000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f6.ASE50 = mean((aapl.oi.test-f6$mean[1:50])^2)
+```
+
+```{r}
+f7 = forecast(aaplfit_pc3, h = 50, xreg = aapl.pc.df)
+
+plot(aapl.oi.test[1:5], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "5-Day Forecast")
+lines(seq(1,5),f7$mean[1:5],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE5 = mean((aapl.oi.test[1:5]-f7$mean[1:5])^2)
+
+plot(aapl.oi.test[1:10], type = "l", ylab = "Open Interest", xlab = "Days Ahead", main = "10-Day Forecast")
+lines(seq(1,10),f7$mean[1:10],col = 'blue', lty = 2)
+legend(3, 1600000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE10 = mean((aapl.oi.test[1:10]-f7$mean[1:10])^2)
+
+plot(aapl.oi.test, type = "l",ylim = c(500000, 6000000), ylab = "Open Interest", xlab = "Days Ahead", main = "50-Day Forecast")
+lines(seq(1,50),f7$mean,type = "l", lty = 2)
+legend(2, 6000000, legend = c("Actual Open Interest", "Forecasted Open Interest"), lty = 1:2)
+f7.ASE50 = mean((aapl.oi.test-f7$mean[1:50])^2)
+```
+```{r}
+f5.ASE5
+f6.ASE5
+f7.ASE5
+```
+```{r}
+f5.ASE10
+f6.ASE10
+f7.ASE10
+```
+```{r}
+f5.ASE50
+f6.ASE50
+f7.ASE50
+```
+#Lets look at some rolling window RMSE
+```{r}
+ts.aapl = ts(oi$AAPL.Open.Interest)
+
+vsRWRMSE1 = roll.win.rmse.nn.wge(ts.aapl, horizon = 5, aaplfit1)
+vsRWRMSE2 = roll.win.rmse.nn.wge(ts.aapl, horizon = 5, aaplfit2)
+vsRWRMSE3 = roll.win.rmse.nn.wge(ts.aapl, horizon = 5, aaplfit3)
+vsRWRMSE4 = roll.win.rmse.nn.wge(ts.aapl, horizon = 5, aaplfit4)
+
+sRWRMSE1 = roll.win.rmse.nn.wge(ts.aapl, horizon = 10, aaplfit1)
+sRWRMSE2 = roll.win.rmse.nn.wge(ts.aapl, horizon = 10, aaplfit2)
+sRWRMSE3 = roll.win.rmse.nn.wge(ts.aapl, horizon = 10, aaplfit3)
+sRWRMSE4 = roll.win.rmse.nn.wge(ts.aapl, horizon = 10, aaplfit4)
+
+lRWRMSE1 = roll.win.rmse.nn.wge(ts.aapl, horizon = 50, aaplfit1)
+lRWRMSE2 = roll.win.rmse.nn.wge(ts.aapl, horizon = 50, aaplfit2)
+lRWRMSE3 = roll.win.rmse.nn.wge(ts.aapl, horizon = 50, aaplfit3)
+lRWRMSE4 = roll.win.rmse.nn.wge(ts.aapl, horizon = 50, aaplfit4)
+```
+```{r}
+vsRWRMSE1$rwRMSE 
+vsRWRMSE2$rwRMSE 
+vsRWRMSE3$rwRMSE 
+vsRWRMSE4$rwRMSE 
+```
+
+```{r}
+sRWRMSE1$rwRMSE 
+sRWRMSE2$rwRMSE 
+sRWRMSE3$rwRMSE 
+sRWRMSE4$rwRMSE 
+```
+
+
+```{r}
+lRWRMSE1$rwRMSE 
+lRWRMSE2$rwRMSE 
+lRWRMSE3$rwRMSE 
+lRWRMSE4$rwRMSE 
+```
+## Seems like fit 2 and fit 3 have the best short and long term rolling window RMSE's of all of our aapl models, but no improvement upon the other models
+
+
+
